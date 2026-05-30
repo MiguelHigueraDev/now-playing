@@ -25,7 +25,7 @@ impl PlaybackSnapshot {
                 track_name: now_playing.track_name.clone(),
                 artist_name: now_playing.artist_name.clone(),
                 album_name: now_playing.album_name.clone(),
-                is_playing: true,
+                is_playing: now_playing.is_playing,
             },
             None => Self::empty(),
         }

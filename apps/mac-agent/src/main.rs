@@ -3,6 +3,8 @@ mod api_client;
 mod config;
 
 use anyhow::Context;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use dotenvy::dotenv;
 use music_provider::{AppleMusicProvider, MusicProvider};
 use shared_types::{NowPlaying, UpdateNowPlayingRequest};
@@ -66,7 +68,7 @@ async fn poll_and_sync(
         return Ok(false);
     }
 
-    let payload = build_update_request(current.as_ref());
+    let payload = build_update_request(provider, current.as_ref())?;
     api_client
         .post_now_playing(&payload)
         .await
@@ -76,17 +78,29 @@ async fn poll_and_sync(
     Ok(true)
 }
 
-fn build_update_request(track: Option<&NowPlaying>) -> UpdateNowPlayingRequest {
+fn build_update_request(
+    provider: &AppleMusicProvider,
+    track: Option<&NowPlaying>,
+) -> anyhow::Result<UpdateNowPlayingRequest> {
     match track {
-        Some(now_playing) => UpdateNowPlayingRequest::from(now_playing.clone()),
-        None => UpdateNowPlayingRequest {
+        Some(now_playing) => {
+            let mut request = UpdateNowPlayingRequest::from(now_playing.clone());
+            request.artwork_base64 = provider
+                .current_artwork()
+                .ok()
+                .flatten()
+                .map(|artwork| STANDARD.encode(artwork.bytes));
+            Ok(request)
+        }
+        None => Ok(UpdateNowPlayingRequest {
             track_name: String::new(),
             artist_name: String::new(),
             album_name: String::new(),
             artwork_url: None,
+            artwork_base64: None,
             duration_seconds: None,
             position_seconds: None,
             is_playing: false,
-        },
+        }),
     }
 }

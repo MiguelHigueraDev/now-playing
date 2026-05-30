@@ -21,6 +21,8 @@ pub struct UpdateNowPlayingRequest {
     pub artist_name: String,
     pub album_name: String,
     pub artwork_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artwork_base64: Option<String>,
     pub duration_seconds: Option<u32>,
     pub position_seconds: Option<u32>,
     pub is_playing: bool,
@@ -28,12 +30,12 @@ pub struct UpdateNowPlayingRequest {
 
 impl UpdateNowPlayingRequest {
     /// Merge incoming fields with a server-side timestamp.
-    pub fn into_now_playing(self) -> NowPlaying {
+    pub fn into_now_playing(self, artwork_url: Option<String>) -> NowPlaying {
         NowPlaying {
             track_name: self.track_name,
             artist_name: self.artist_name,
             album_name: self.album_name,
-            artwork_url: self.artwork_url,
+            artwork_url: artwork_url.or(self.artwork_url),
             duration_seconds: self.duration_seconds,
             position_seconds: self.position_seconds,
             is_playing: self.is_playing,
@@ -77,6 +79,7 @@ impl From<NowPlaying> for UpdateNowPlayingRequest {
             artist_name: value.artist_name,
             album_name: value.album_name,
             artwork_url: value.artwork_url,
+            artwork_base64: None,
             duration_seconds: value.duration_seconds,
             position_seconds: value.position_seconds,
             is_playing: value.is_playing,
