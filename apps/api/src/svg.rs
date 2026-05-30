@@ -3,6 +3,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use shared_types::{extrapolated_position_seconds, NowPlaying};
 
+use crate::colors::svg_theme_from_artwork;
 use crate::state::StoredArtwork;
 
 const WIDTH: u32 = 720;
@@ -16,8 +17,6 @@ const ART_RX: u32 = 16;
 const CARD_RX: u32 = 20;
 const FONT_SANS: &str =
     "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-const BG_COLOR: &str = "#121116";
-
 /// Album art bottom edge; progress UI starts below this with `ART_GAP_ABOVE_PROGRESS`.
 const ART_BOTTOM: u32 = BAR_Y - ART_GAP_ABOVE_PROGRESS;
 const ART_SIZE: u32 = ART_BOTTOM - PADDING;
@@ -72,27 +71,18 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
 
     let art_image = artwork_image_href(input.artwork);
     let art_foreground = artwork_foreground(&art_image, ART_SIZE);
+    let artwork_bytes = input.artwork.map(|art| art.bytes.as_slice());
+    let (bg_gradient_defs, bg_markup, accent_color) =
+        svg_theme_from_artwork(artwork_bytes, WIDTH, HEIGHT);
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="Now playing: {track}">
   <defs>
-    <linearGradient id="progress-fill" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#f5d08a"/>
-      <stop offset="55%" stop-color="#e8b45c"/>
-      <stop offset="100%" stop-color="#d4923f"/>
-    </linearGradient>
-    <linearGradient id="art-shine" x1="0" y1="0" x2="0" y2="1">
+{bg_gradient_defs}    <linearGradient id="art-shine" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>
       <stop offset="40%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
     <filter id="art-shadow" x="-20%" y="-10%" width="140%" height="130%">
       <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.55"/>
-    </filter>
-    <filter id="thumb-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
     </filter>
     <clipPath id="art-clip">
       <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" rx="{ART_RX}"/>
@@ -102,7 +92,7 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
     </clipPath>
   </defs>
   <g clip-path="url(#card-clip)">
-    <rect width="{WIDTH}" height="{HEIGHT}" fill="{BG_COLOR}"/>
+{bg_markup}
     <g filter="url(#art-shadow)" clip-path="url(#art-clip)">
       {art_foreground}
       <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" fill="url(#art-shine)" pointer-events="none"/>
@@ -113,8 +103,8 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
     <text x="{TEXT_X}" y="{artist_y}" fill="#d8d4cc" font-family="{FONT_SANS}" font-size="{ARTIST_FONT}" font-weight="500">{artist}</text>
     <text x="{TEXT_X}" y="{album_y}" fill="#8f8a82" font-family="{FONT_SANS}" font-size="{ALBUM_FONT}" font-weight="400">{album}</text>
     <rect x="{PADDING}" y="{BAR_Y}" width="{BAR_WIDTH}" height="{BAR_H}" rx="3" fill="#ffffff" fill-opacity="0.08"/>
-    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="3" fill="url(#progress-fill)"/>
-    <circle cx="{thumb_x}" cy="{bar_center_y}" r="6" fill="#f5d08a" filter="url(#thumb-glow)" opacity="{thumb_opacity}"/>
+    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="3" fill="{accent_color}"/>
+    <circle cx="{thumb_x}" cy="{bar_center_y}" r="6" fill="{accent_color}" opacity="{thumb_opacity}"/>
     <text x="{PADDING}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em">{position_label}</text>
     <text x="{duration_label_x}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em" text-anchor="end">{duration_label}</text>
   </g>
@@ -214,7 +204,7 @@ mod tests {
         assert!(svg.contains("Test Song"));
         assert!(svg.contains("Test Artist"));
         assert!(svg.contains("Test Album"));
-        assert!(svg.contains("progress-fill"));
+        assert!(!svg.contains("thumb-glow"));
         assert!(svg.contains(r#"y="176""#));
         assert!(PADDING + ART_SIZE + ART_GAP_ABOVE_PROGRESS <= BAR_Y);
     }

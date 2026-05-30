@@ -1,4 +1,5 @@
 mod auth;
+mod colors;
 mod error;
 mod handlers;
 mod routes;
