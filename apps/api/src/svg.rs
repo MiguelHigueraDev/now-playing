@@ -25,8 +25,10 @@ const TEXT_X: u32 = PADDING + ART_SIZE + 28;
 const TRACK_FONT: u32 = 26;
 const ARTIST_FONT: u32 = 16;
 const ALBUM_FONT: u32 = 13;
+const IDLE_MESSAGE_FONT: u32 = 18;
 const TRACK_TO_ARTIST: u32 = 30;
 const ARTIST_TO_ALBUM: u32 = 24;
+const IDLE_MESSAGE: &str = "Not listening to anything";
 
 /// Baselines for track, artist, and album — vertically centered in the art column.
 fn metadata_baselines() -> (u32, u32, u32) {
@@ -48,7 +50,23 @@ pub struct SvgRenderInput<'a> {
     pub at: DateTime<Utc>,
 }
 
+fn is_idle(now_playing: &NowPlaying) -> bool {
+    now_playing.track_name.is_empty()
+}
+
+/// Baseline for the centered idle message — vertically centered above the progress bar.
+fn idle_message_baseline() -> u32 {
+    let region_mid = (PADDING + ART_BOTTOM) / 2;
+    let ascent = IDLE_MESSAGE_FONT * 3 / 4;
+    let descent = IDLE_MESSAGE_FONT / 4;
+    region_mid + (ascent.saturating_sub(descent)) / 2
+}
+
 pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
+    if is_idle(input.now_playing) {
+        return render_idle_svg();
+    }
+
     let position = extrapolated_position_seconds(input.now_playing, input.at);
     let duration = input.now_playing.duration_seconds.unwrap_or(0);
     let progress = if duration > 0 {
@@ -111,6 +129,32 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
   <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
 </svg>"##,
         thumb_opacity = if fill_width > 4 { "1" } else { "0" },
+    )
+}
+
+fn render_idle_svg() -> String {
+    let duration_label_x = WIDTH - PADDING;
+    let time_label_y = BAR_Y + 20;
+    let message_y = idle_message_baseline();
+    let message_x = WIDTH / 2;
+    let (_, bg_markup, _) = svg_theme_from_artwork(None, WIDTH, HEIGHT);
+
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="{IDLE_MESSAGE}">
+  <defs>
+    <clipPath id="card-clip">
+      <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#card-clip)">
+{bg_markup}
+    <text x="{message_x}" y="{message_y}" fill="#8f8a82" font-family="{FONT_SANS}" font-size="{IDLE_MESSAGE_FONT}" font-weight="500" text-anchor="middle">{IDLE_MESSAGE}</text>
+    <rect x="{PADDING}" y="{BAR_Y}" width="{BAR_WIDTH}" height="{BAR_H}" rx="3" fill="#ffffff" fill-opacity="0.08"/>
+    <text x="{PADDING}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em">0:00</text>
+    <text x="{duration_label_x}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em" text-anchor="end">0:00</text>
+  </g>
+  <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
+</svg>"##,
     )
 }
 
@@ -216,6 +260,31 @@ mod tests {
         let block_mid = (track_y - TRACK_FONT * 3 / 4 + album_y + ALBUM_FONT / 4) / 2;
         let diff = block_mid.abs_diff(region_mid);
         assert!(diff <= 2, "expected mid {region_mid}, got {block_mid}");
+    }
+
+    #[test]
+    fn renders_idle_state_without_album_art() {
+        let listened_at = Utc::now();
+        let now_playing = NowPlaying {
+            track_name: String::new(),
+            artist_name: String::new(),
+            album_name: String::new(),
+            artwork_url: None,
+            duration_seconds: None,
+            position_seconds: None,
+            is_playing: false,
+            listened_at,
+        };
+
+        let svg = render_now_playing_svg(SvgRenderInput {
+            now_playing: &now_playing,
+            artwork: None,
+            at: listened_at,
+        });
+
+        assert!(svg.contains("Not listening to anything"));
+        assert!(!svg.contains("art-clip"));
+        assert!(!svg.contains("♪"));
     }
 
     #[test]
