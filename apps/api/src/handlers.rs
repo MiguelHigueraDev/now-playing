@@ -1,18 +1,20 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{header, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     response::Response,
     Json,
 };
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use chrono::Utc;
 use serde_json::{json, Value};
 use shared_types::{GetNowPlayingResponse, UpdateNowPlayingRequest};
 use tracing::info;
 
 use crate::error::ApiError;
 use crate::state::{AppState, StoredArtwork};
+use crate::svg::{render_now_playing_svg, SvgRenderInput};
 
 const ARTWORK_URL: &str = "/api/now-playing/artwork";
 
@@ -33,6 +35,36 @@ pub async fn get_now_playing(
     };
 
     Ok(Json(current.clone().into()))
+}
+
+pub async fn get_now_playing_image(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let now_guard = state
+        .now_playing
+        .read()
+        .map_err(|_| ApiError::Internal)?;
+
+    let Some(current) = now_guard.as_ref() else {
+        return Err(ApiError::NotFound);
+    };
+
+    let art_guard = state.artwork.read().map_err(|_| ApiError::Internal)?;
+    let artwork = (*art_guard).as_ref();
+
+    let svg = render_now_playing_svg(SvgRenderInput {
+        now_playing: current,
+        artwork,
+        at: Utc::now(),
+    });
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")
+        .header(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache, max-age=0"),
+        )
+        .body(Body::from(svg))
+        .map_err(|_| ApiError::Internal)?)
 }
 
 pub async fn get_artwork(State(state): State<AppState>) -> Result<Response, ApiError> {

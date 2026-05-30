@@ -1,0 +1,256 @@
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+use chrono::{DateTime, Utc};
+use shared_types::{extrapolated_position_seconds, NowPlaying};
+
+use crate::state::StoredArtwork;
+
+const WIDTH: u32 = 720;
+const HEIGHT: u32 = 220;
+const PADDING: u32 = 28;
+const ART_GAP_ABOVE_PROGRESS: u32 = 12;
+const BAR_Y: u32 = HEIGHT - 44;
+const BAR_WIDTH: u32 = WIDTH - PADDING * 2;
+const BAR_H: u32 = 5;
+const ART_RX: u32 = 16;
+const CARD_RX: u32 = 20;
+const FONT_SANS: &str =
+    "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const BG_COLOR: &str = "#121116";
+
+/// Album art bottom edge; progress UI starts below this with `ART_GAP_ABOVE_PROGRESS`.
+const ART_BOTTOM: u32 = BAR_Y - ART_GAP_ABOVE_PROGRESS;
+const ART_SIZE: u32 = ART_BOTTOM - PADDING;
+const TEXT_X: u32 = PADDING + ART_SIZE + 28;
+
+const TRACK_FONT: u32 = 26;
+const ARTIST_FONT: u32 = 16;
+const ALBUM_FONT: u32 = 13;
+const TRACK_TO_ARTIST: u32 = 30;
+const ARTIST_TO_ALBUM: u32 = 24;
+
+/// Baselines for track, artist, and album — vertically centered in the art column.
+fn metadata_baselines() -> (u32, u32, u32) {
+    let region_mid = (PADDING + ART_BOTTOM) / 2;
+    let track_ascent = TRACK_FONT * 3 / 4;
+    let album_descent = ALBUM_FONT / 4;
+    let block_height = track_ascent + TRACK_TO_ARTIST + ARTIST_TO_ALBUM + album_descent;
+    let block_top = region_mid.saturating_sub(block_height / 2);
+    let track_y = block_top + track_ascent;
+    let artist_y = track_y + TRACK_TO_ARTIST;
+    let album_y = artist_y + ARTIST_TO_ALBUM;
+    (track_y, artist_y, album_y)
+}
+
+#[derive(Debug, Clone)]
+pub struct SvgRenderInput<'a> {
+    pub now_playing: &'a NowPlaying,
+    pub artwork: Option<&'a StoredArtwork>,
+    pub at: DateTime<Utc>,
+}
+
+pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
+    let position = extrapolated_position_seconds(input.now_playing, input.at);
+    let duration = input.now_playing.duration_seconds.unwrap_or(0);
+    let progress = if duration > 0 {
+        (position as f64 / duration as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let fill_width = (BAR_WIDTH as f64 * progress).round() as u32;
+    let thumb_x = PADDING + fill_width;
+    let duration_label_x = WIDTH - PADDING;
+    let (track_y, artist_y, album_y) = metadata_baselines();
+    let bar_center_y = BAR_Y + BAR_H / 2;
+    let time_label_y = BAR_Y + 20;
+
+    let track = truncate(&input.now_playing.track_name, 40);
+    let artist = truncate(&input.now_playing.artist_name, 46);
+    let album = truncate(&input.now_playing.album_name, 46);
+    let position_label = format_mm_ss(position);
+    let duration_label = format_mm_ss(duration);
+
+    let art_image = artwork_image_href(input.artwork);
+    let art_foreground = artwork_foreground(&art_image, ART_SIZE);
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="Now playing: {track}">
+  <defs>
+    <linearGradient id="progress-fill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f5d08a"/>
+      <stop offset="55%" stop-color="#e8b45c"/>
+      <stop offset="100%" stop-color="#d4923f"/>
+    </linearGradient>
+    <linearGradient id="art-shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="art-shadow" x="-20%" y="-10%" width="140%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="thumb-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="art-clip">
+      <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" rx="{ART_RX}"/>
+    </clipPath>
+    <clipPath id="card-clip">
+      <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#card-clip)">
+    <rect width="{WIDTH}" height="{HEIGHT}" fill="{BG_COLOR}"/>
+    <g filter="url(#art-shadow)" clip-path="url(#art-clip)">
+      {art_foreground}
+      <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" fill="url(#art-shine)" pointer-events="none"/>
+    </g>
+    <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" rx="{ART_RX}" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+    <rect x="{PADDING}" y="{PADDING}" width="{ART_SIZE}" height="{ART_SIZE}" rx="{ART_RX}" fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="1" transform="translate(0 1)"/>
+    <text x="{TEXT_X}" y="{track_y}" fill="#faf8f5" font-family="{FONT_SANS}" font-size="{TRACK_FONT}" font-weight="700" letter-spacing="-0.02em">{track}</text>
+    <text x="{TEXT_X}" y="{artist_y}" fill="#d8d4cc" font-family="{FONT_SANS}" font-size="{ARTIST_FONT}" font-weight="500">{artist}</text>
+    <text x="{TEXT_X}" y="{album_y}" fill="#8f8a82" font-family="{FONT_SANS}" font-size="{ALBUM_FONT}" font-weight="400">{album}</text>
+    <rect x="{PADDING}" y="{BAR_Y}" width="{BAR_WIDTH}" height="{BAR_H}" rx="3" fill="#ffffff" fill-opacity="0.08"/>
+    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="3" fill="url(#progress-fill)"/>
+    <circle cx="{thumb_x}" cy="{bar_center_y}" r="6" fill="#f5d08a" filter="url(#thumb-glow)" opacity="{thumb_opacity}"/>
+    <text x="{PADDING}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em">{position_label}</text>
+    <text x="{duration_label_x}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="11" font-variant-numeric="tabular-nums" letter-spacing="0.04em" text-anchor="end">{duration_label}</text>
+  </g>
+  <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
+</svg>"##,
+        thumb_opacity = if fill_width > 4 { "1" } else { "0" },
+    )
+}
+
+fn artwork_image_href(artwork: Option<&StoredArtwork>) -> Option<String> {
+    let artwork = artwork?;
+    let encoded = STANDARD.encode(&artwork.bytes);
+    Some(format!("data:{};base64,{}", artwork.content_type, encoded))
+}
+
+fn artwork_foreground(href: &Option<String>, size: u32) -> String {
+    let Some(href) = href else {
+        let center_x = PADDING + size / 2;
+        let center_y = PADDING + size / 2;
+        return format!(
+            r##"<rect x="{PADDING}" y="{PADDING}" width="{size}" height="{size}" fill="#1a191e"/>
+  <text x="{center_x}" y="{center_y}" fill="#5c584f" font-family="{FONT_SANS}" font-size="52" text-anchor="middle" dominant-baseline="middle">♪</text>"##
+        );
+    };
+
+    format!(
+        r##"<image x="{PADDING}" y="{PADDING}" width="{size}" height="{size}" preserveAspectRatio="xMidYMid slice" href="{href}"/>"##
+    )
+}
+
+fn format_mm_ss(total_seconds: u32) -> String {
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    format!("{minutes}:{seconds:02}")
+}
+
+fn truncate(text: &str, max_chars: usize) -> String {
+    let escaped = escape_xml(text);
+    if escaped.chars().count() <= max_chars {
+        return escaped;
+    }
+
+    let mut out = String::new();
+    for (index, ch) in escaped.chars().enumerate() {
+        if index >= max_chars.saturating_sub(1) {
+            out.push('…');
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn escape_xml(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_baselines;
+    use super::*;
+    use chrono::TimeZone;
+    use shared_types::NowPlaying;
+
+    #[test]
+    fn renders_track_metadata() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let at = listened_at + chrono::Duration::seconds(30);
+        let now_playing = NowPlaying {
+            track_name: "Test Song".into(),
+            artist_name: "Test Artist".into(),
+            album_name: "Test Album".into(),
+            artwork_url: None,
+            duration_seconds: Some(200),
+            position_seconds: Some(10),
+            is_playing: true,
+            listened_at,
+        };
+
+        let svg = render_now_playing_svg(SvgRenderInput {
+            now_playing: &now_playing,
+            artwork: None,
+            at,
+        });
+
+        assert!(svg.contains("Test Song"));
+        assert!(svg.contains("Test Artist"));
+        assert!(svg.contains("Test Album"));
+        assert!(svg.contains("progress-fill"));
+        assert!(svg.contains(r#"y="176""#));
+        assert!(PADDING + ART_SIZE + ART_GAP_ABOVE_PROGRESS <= BAR_Y);
+    }
+
+    #[test]
+    fn metadata_is_vertically_centered_in_art_region() {
+        let (track_y, _, album_y) = metadata_baselines();
+        let region_mid = (PADDING + ART_BOTTOM) / 2;
+        let block_mid = (track_y - TRACK_FONT * 3 / 4 + album_y + ALBUM_FONT / 4) / 2;
+        let diff = block_mid.abs_diff(region_mid);
+        assert!(diff <= 2, "expected mid {region_mid}, got {block_mid}");
+    }
+
+    #[test]
+    fn escapes_special_characters() {
+        let listened_at = Utc::now();
+        let now_playing = NowPlaying {
+            track_name: "Rock & Roll".into(),
+            artist_name: "A < B".into(),
+            album_name: "Album".into(),
+            artwork_url: None,
+            duration_seconds: Some(100),
+            position_seconds: Some(0),
+            is_playing: false,
+            listened_at,
+        };
+
+        let svg = render_now_playing_svg(SvgRenderInput {
+            now_playing: &now_playing,
+            artwork: None,
+            at: listened_at,
+        });
+
+        assert!(svg.contains("Rock &amp; Roll"));
+        assert!(svg.contains("A &lt; B"));
+        assert!(!svg.contains("PLAYING"));
+        assert!(!svg.contains("PAUSED"));
+    }
+}

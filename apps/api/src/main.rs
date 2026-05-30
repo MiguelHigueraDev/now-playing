@@ -3,6 +3,7 @@ mod error;
 mod handlers;
 mod routes;
 mod state;
+mod svg;
 
 use std::net::SocketAddr;
 

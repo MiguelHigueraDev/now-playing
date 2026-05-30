@@ -57,6 +57,22 @@ pub struct GetNowPlayingResponse {
     pub listened_at: DateTime<Utc>,
 }
 
+/// Playback position at `at`, extrapolating from `listened_at` while the track is playing.
+pub fn extrapolated_position_seconds(now: &NowPlaying, at: DateTime<Utc>) -> u32 {
+    let base = now.position_seconds.unwrap_or(0);
+    if !now.is_playing {
+        return base;
+    }
+
+    let elapsed = (at - now.listened_at).num_seconds().max(0) as u32;
+    let current = base.saturating_add(elapsed);
+
+    match now.duration_seconds {
+        Some(duration) => current.min(duration),
+        None => current,
+    }
+}
+
 impl From<NowPlaying> for GetNowPlayingResponse {
     fn from(value: NowPlaying) -> Self {
         Self {
@@ -69,6 +85,66 @@ impl From<NowPlaying> for GetNowPlayingResponse {
             is_playing: value.is_playing,
             listened_at: value.listened_at,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn extrapolates_position_while_playing() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let now_playing = NowPlaying {
+            track_name: String::new(),
+            artist_name: String::new(),
+            album_name: String::new(),
+            artwork_url: None,
+            duration_seconds: Some(300),
+            position_seconds: Some(60),
+            is_playing: true,
+            listened_at,
+        };
+
+        let at = listened_at + chrono::Duration::seconds(45);
+        assert_eq!(extrapolated_position_seconds(&now_playing, at), 105);
+    }
+
+    #[test]
+    fn freezes_position_when_paused() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let now_playing = NowPlaying {
+            track_name: String::new(),
+            artist_name: String::new(),
+            album_name: String::new(),
+            artwork_url: None,
+            duration_seconds: Some(300),
+            position_seconds: Some(60),
+            is_playing: false,
+            listened_at,
+        };
+
+        let at = listened_at + chrono::Duration::seconds(120);
+        assert_eq!(extrapolated_position_seconds(&now_playing, at), 60);
+    }
+
+    #[test]
+    fn clamps_to_duration() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let now_playing = NowPlaying {
+            track_name: String::new(),
+            artist_name: String::new(),
+            album_name: String::new(),
+            artwork_url: None,
+            duration_seconds: Some(100),
+            position_seconds: Some(90),
+            is_playing: true,
+            listened_at,
+        };
+
+        let at = listened_at + chrono::Duration::seconds(30);
+        assert_eq!(extrapolated_position_seconds(&now_playing, at), 100);
     }
 }
 

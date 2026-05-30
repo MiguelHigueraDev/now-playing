@@ -78,6 +78,16 @@ curl http://localhost:3000/health
 curl http://localhost:3000/api/now-playing
 ```
 
+### Get now-playing widget (SVG)
+
+Renders album art, track/artist/album text, and a seek bar. Progress is extrapolated from `listened_at`, `position_seconds`, and the current time while the track is playing.
+
+```bash
+curl http://localhost:3000/api/now-playing/image -o now-playing.svg
+```
+
+Open the file in a browser, or embed it: `<img src="http://localhost:3000/api/now-playing/image" alt="Now playing" />`.
+
 ### Update current track (agent only)
 
 ```bash
@@ -120,11 +130,11 @@ now-playing/
 
 ## Next steps
 
+- ~~Add an /api/image endpoint to render an image with the data from /api/now-playing~~ (`GET /api/now-playing/image`)
+- Package `mac-agent` as a menu bar daemon
 - Persist state with SQLx + SQLite
 - Add Redis for pub/sub and caching
-- Build a real-time frontend (SSE/WebSocket)
 - Add Spotify and other providers via `MusicProvider`
-- Package `mac-agent` as a menu bar daemon
 
 ## License
 
