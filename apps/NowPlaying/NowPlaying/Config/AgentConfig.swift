@@ -33,6 +33,10 @@ struct AgentConfig: Equatable, Codable {
         if authToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ConfigValidationError.emptyAuthToken
         }
+        let trimmedBaseURL = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedBaseURL.isEmpty || URL(string: trimmedBaseURL) == nil {
+            throw ConfigValidationError.invalidBaseURL
+        }
         try Self.validatePollInterval(pollIntervalSecs)
     }
 
@@ -45,12 +49,15 @@ struct AgentConfig: Equatable, Codable {
 
 enum ConfigValidationError: LocalizedError {
     case emptyAuthToken
+    case invalidBaseURL
     case invalidPollInterval
 
     var errorDescription: String? {
         switch self {
         case .emptyAuthToken:
             return "Auth token must not be empty"
+        case .invalidBaseURL:
+            return "API base URL must be a valid URL"
         case .invalidPollInterval:
             return "Poll interval must be between 2 and 5 seconds"
         }

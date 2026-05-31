@@ -10,13 +10,15 @@ final class AppState: ObservableObject {
     @Published private(set) var config: AgentConfig
     @Published var status: AgentStatus = .idle
     @Published var loginAtLaunchEnabled: Bool = false
+    @Published private(set) var configLoadError: String?
 
     private var syncEngine: SyncEngine?
     private var didBootstrap = false
 
-    init(configStore: ConfigStore, config: AgentConfig) {
+    init(configStore: ConfigStore, config: AgentConfig, configLoadError: String? = nil) {
         self.configStore = configStore
         self.config = config
+        self.configLoadError = configLoadError
     }
 
     func bootstrap() {
@@ -32,6 +34,7 @@ final class AppState: ObservableObject {
     func saveConfig(_ newConfig: AgentConfig) throws {
         try configStore.save(newConfig)
         config = newConfig
+        configLoadError = nil
         syncEngine?.updateConfig(newConfig)
     }
 
@@ -47,9 +50,7 @@ final class AppState: ObservableObject {
     private func startSyncEngine() {
         let engine = SyncEngine(config: config)
         engine.onStatusChange = { [weak self] status in
-            Task { @MainActor in
-                self?.status = status
-            }
+            self?.status = status
         }
         engine.start()
         syncEngine = engine

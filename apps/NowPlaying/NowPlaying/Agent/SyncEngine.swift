@@ -22,7 +22,6 @@ enum AgentStatus: Equatable {
 
 @MainActor
 final class SyncEngine {
-    private let music = AppleMusicProvider()
     private var previous = PlaybackSnapshot.empty
     private var pollTask: Task<Void, Never>?
     private var config: AgentConfig
@@ -47,8 +46,12 @@ final class SyncEngine {
     }
 
     private func restartPolling() {
-        pollTask?.cancel()
+        let oldTask = pollTask
+        oldTask?.cancel()
         pollTask = Task { [weak self] in
+            if let oldTask {
+                _ = await oldTask.value
+            }
             guard let self else { return }
             await self.runLoop()
         }
@@ -64,37 +67,67 @@ final class SyncEngine {
         }
     }
 
+    private struct PollCycleResult {
+        let snapshot: PlaybackSnapshot
+        let payload: UpdateNowPlayingRequest?
+        let displayStatus: AgentStatus
+        let changed: Bool
+    }
+
     private func pollOnce() async {
         if config.authToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             onStatusChange?(.error("Configure auth token in Preferences"))
             return
         }
 
-        do {
-            let track = try music.currentTrack()
-            let snapshot = PlaybackSnapshot.from(track: track)
-            let displayStatus = displayStatus(for: track)
+        let pollConfig = config
+        let previousSnapshot = previous
 
-            if snapshot.hasChanged(from: previous) {
-                onStatusChange?(.syncing)
-                let payload = try buildUpdateRequest(track: track)
-                let client = ApiClient(
-                    baseURL: config.normalizedBaseURL,
-                    authToken: config.authToken
-                )
-                try await client.postNowPlaying(payload)
-                previous = snapshot
-                LogService.shared.info("Sent now-playing update to API")
+        let result = await Task.detached(priority: .utility) { () -> Result<PollCycleResult, Error> in
+            do {
+                let music = AppleMusicProvider()
+                let track = try music.currentTrack()
+                let snapshot = PlaybackSnapshot.from(track: track)
+                let changed = snapshot.hasChanged(from: previousSnapshot)
+                let payload = changed ? try Self.buildUpdateRequest(track: track, music: music) : nil
+                let displayStatus = Self.displayStatus(for: track)
+                return .success(PollCycleResult(
+                    snapshot: snapshot,
+                    payload: payload,
+                    displayStatus: displayStatus,
+                    changed: changed
+                ))
+            } catch {
+                return .failure(error)
             }
+        }.value
 
-            onStatusChange?(displayStatus)
-        } catch {
+        switch result {
+        case .success(let cycle):
+            if cycle.changed, let payload = cycle.payload {
+                onStatusChange?(.syncing)
+                let client = ApiClient(
+                    baseURL: pollConfig.normalizedBaseURL,
+                    authToken: pollConfig.authToken
+                )
+                do {
+                    try await client.postNowPlaying(payload)
+                    previous = cycle.snapshot
+                    LogService.shared.info("Sent now-playing update to API")
+                } catch {
+                    LogService.shared.error("Poll cycle failed: \(error.localizedDescription)")
+                    onStatusChange?(.error(error.localizedDescription))
+                    return
+                }
+            }
+            onStatusChange?(cycle.displayStatus)
+        case .failure(let error):
             LogService.shared.error("Poll cycle failed: \(error.localizedDescription)")
             onStatusChange?(.error(error.localizedDescription))
         }
     }
 
-    private func displayStatus(for track: NowPlayingTrack?) -> AgentStatus {
+    nonisolated private static func displayStatus(for track: NowPlayingTrack?) -> AgentStatus {
         guard let track else {
             return .lastTrack("Nothing playing")
         }
@@ -106,7 +139,10 @@ final class SyncEngine {
         return .lastTrack("\(track.trackName) — \(track.artistName)")
     }
 
-    private func buildUpdateRequest(track: NowPlayingTrack?) throws -> UpdateNowPlayingRequest {
+    nonisolated private static func buildUpdateRequest(
+        track: NowPlayingTrack?,
+        music: AppleMusicProvider
+    ) throws -> UpdateNowPlayingRequest {
         guard let track else {
             return .cleared()
         }

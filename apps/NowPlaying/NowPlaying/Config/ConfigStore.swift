@@ -36,6 +36,13 @@ final class ConfigStore {
         appDir.appendingPathComponent("logs", isDirectory: true)
     }
 
+    static func fallbackStore() throws -> ConfigStore {
+        let appDir = try applicationSupportDirectory().appendingPathComponent(appDirName, isDirectory: true)
+        try FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        let configPath = appDir.appendingPathComponent(configFileName)
+        return ConfigStore(appDir: appDir, configPath: configPath)
+    }
+
     static func loadOrCreate() throws -> (ConfigStore, AgentConfig) {
         let appDir = try applicationSupportDirectory().appendingPathComponent(appDirName, isDirectory: true)
         try FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
@@ -122,8 +129,6 @@ enum SimpleTOML {
 
     private static func formatValue(_ value: Any) -> String {
         switch value {
-        case let n as Int:
-            return "\(n)"
         case let n as Int:
             return "\(n)"
         case let s as String:

@@ -134,7 +134,7 @@ The menu bar app stores `api_base_url`, `auth_token`, and `poll_interval_secs` i
 
 ## Project layout
 
-```
+```text
 now-playing/
 ├── Cargo.toml              # workspace root (api + shared-types)
 ├── apps/

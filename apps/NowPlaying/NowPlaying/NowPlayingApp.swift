@@ -6,13 +6,29 @@ struct NowPlayingApp: App {
     @StateObject private var appState: AppState
 
     init() {
-        let loaded: (ConfigStore, AgentConfig)
+        let store: ConfigStore
+        let config: AgentConfig
+        var loadError: String?
+
         do {
-            loaded = try ConfigStore.loadOrCreate()
+            let loaded = try ConfigStore.loadOrCreate()
+            store = loaded.0
+            config = loaded.1
         } catch {
-            fatalError("Failed to load config: \(error.localizedDescription)")
+            loadError = error.localizedDescription
+            config = AgentConfig.defaultTemplate()
+            do {
+                store = try ConfigStore.fallbackStore()
+            } catch {
+                fatalError("Failed to initialize config store: \(error.localizedDescription)")
+            }
         }
-        _appState = StateObject(wrappedValue: AppState(configStore: loaded.0, config: loaded.1))
+
+        _appState = StateObject(wrappedValue: AppState(
+            configStore: store,
+            config: config,
+            configLoadError: loadError
+        ))
     }
 
     var body: some Scene {

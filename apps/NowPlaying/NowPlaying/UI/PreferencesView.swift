@@ -46,6 +46,12 @@ struct PreferencesView: View {
                     }
                     .formStyle(.grouped)
 
+                    if let configLoadError = appState.configLoadError {
+                        Text("Config load failed: \(configLoadError). Fix settings below and save.")
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
+
                     if let validationError {
                         Text(validationError)
                             .font(.callout)

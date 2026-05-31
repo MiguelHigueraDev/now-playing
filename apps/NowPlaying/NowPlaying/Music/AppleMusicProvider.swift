@@ -118,7 +118,7 @@ final class AppleMusicProvider {
             return nil
         }
 
-        let parts = raw.split(separator: "||", omittingEmptySubsequences: false).map(String.init)
+        let parts = raw.components(separatedBy: "||")
         guard parts.count == 6 else {
             throw AppleMusicError.unexpectedOutput(raw)
         }
