@@ -1,106 +1,53 @@
-mod agent;
-mod api_client;
-mod config;
-
-use anyhow::Context;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use dotenvy::dotenv;
-use music_provider::{AppleMusicProvider, MusicProvider};
-use shared_types::{NowPlaying, UpdateNowPlayingRequest};
-use tokio::time;
-use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tokio::sync::mpsc;
+use tracing::info;
 
-use crate::agent::PlaybackSnapshot;
-use crate::api_client::ApiClient;
-use crate::config::AgentConfig;
+use mac_agent::config::AgentConfig;
+use mac_agent::{init_console_logging, run_agent};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
+    #[cfg(target_os = "macos")]
+    if mac_agent::is_app_bundle() {
+        return mac_agent::tray::run_app();
+    }
 
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,mac_agent=debug".into()))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    run_cli().await
+}
+
+async fn run_cli() -> anyhow::Result<()> {
+    dotenv().ok();
+    init_console_logging();
 
     let config = AgentConfig::from_env()?;
-    let provider = AppleMusicProvider;
-    let api_client = ApiClient::new(config.api_base_url.clone(), config.auth_token.clone());
+
+    let (_config_tx, config_rx) = tokio::sync::watch::channel(config.clone());
+    let (status_tx, mut status_rx) = mpsc::channel(32);
+    let cancel = tokio_util::sync::CancellationToken::new();
 
     info!(
         api = %config.api_base_url,
-        poll_interval_secs = config.poll_interval.as_secs(),
-        "mac-agent started"
+        poll_interval_secs = config.poll_interval_secs,
+        "mac-agent started (CLI mode)"
     );
 
-    let mut previous = PlaybackSnapshot::empty();
-    let mut interval = time::interval(config.poll_interval);
-
-    loop {
-        interval.tick().await;
-
-        match poll_and_sync(&provider, &api_client, &mut previous).await {
-            Ok(sent) if sent => info!("sent now-playing update to API"),
-            Ok(_) => {}
-            Err(err) => error!(error = %err, "poll cycle failed"),
+    let agent_cancel = cancel.clone();
+    let agent_handle = tokio::spawn(async move {
+        if let Err(err) = run_agent(config_rx, agent_cancel, status_tx).await {
+            tracing::error!(error = %err, "agent task exited with error");
         }
-    }
-}
+    });
 
-async fn poll_and_sync(
-    provider: &AppleMusicProvider,
-    api_client: &ApiClient,
-    previous: &mut PlaybackSnapshot,
-) -> anyhow::Result<bool> {
-    let current = match provider.current_track() {
-        Ok(track) => track,
-        Err(err) => {
-            warn!(error = %err, "failed to read Apple Music state");
-            return Ok(false);
+    let status_handle = tokio::spawn(async move {
+        while let Some(status) = status_rx.recv().await {
+            tracing::debug!(status = %status.menu_label(), "agent status");
         }
-    };
+    });
 
-    let snapshot = PlaybackSnapshot::from_track(current.as_ref());
+    tokio::signal::ctrl_c().await?;
+    cancel.cancel();
+    agent_handle.await?;
+    status_handle.abort();
 
-    if !previous.has_changed(&snapshot) {
-        return Ok(false);
-    }
-
-    let payload = build_update_request(provider, current.as_ref())?;
-    api_client
-        .post_now_playing(&payload)
-        .await
-        .context("failed to POST now-playing update")?;
-
-    *previous = snapshot;
-    Ok(true)
-}
-
-fn build_update_request(
-    provider: &AppleMusicProvider,
-    track: Option<&NowPlaying>,
-) -> anyhow::Result<UpdateNowPlayingRequest> {
-    match track {
-        Some(now_playing) => {
-            let mut request = UpdateNowPlayingRequest::from(now_playing.clone());
-            request.artwork_base64 = provider
-                .current_artwork()
-                .ok()
-                .flatten()
-                .map(|artwork| STANDARD.encode(artwork.bytes));
-            Ok(request)
-        }
-        None => Ok(UpdateNowPlayingRequest {
-            track_name: String::new(),
-            artist_name: String::new(),
-            album_name: String::new(),
-            artwork_url: None,
-            artwork_base64: None,
-            duration_seconds: None,
-            position_seconds: None,
-            is_playing: false,
-        }),
-    }
+    Ok(())
 }
