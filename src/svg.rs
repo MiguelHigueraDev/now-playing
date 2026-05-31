@@ -1,7 +1,7 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use shared_types::{extrapolated_position_seconds, NowPlaying};
+use crate::models::{extrapolated_position_seconds, NowPlaying};
 
 use crate::colors::svg_theme_from_artwork;
 use crate::state::StoredArtwork;
@@ -222,7 +222,7 @@ mod tests {
     use super::metadata_baselines;
     use super::*;
     use chrono::TimeZone;
-    use shared_types::NowPlaying;
+    use crate::models::NowPlaying;
 
     #[test]
     fn renders_track_metadata() {

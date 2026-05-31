@@ -2,6 +2,7 @@ mod auth;
 mod colors;
 mod error;
 mod handlers;
+mod models;
 mod routes;
 mod state;
 mod svg;

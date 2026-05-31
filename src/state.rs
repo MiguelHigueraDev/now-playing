@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use shared_types::NowPlaying;
+use crate::models::NowPlaying;
 
 /// Cached album artwork served at `/api/now-playing/artwork`.
 #[derive(Debug, Clone)]

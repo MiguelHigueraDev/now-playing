@@ -16,8 +16,7 @@ Now Playing.app (Swift, polls Apple Music)
 
 | Component | Role |
 |---|---|
-| `crates/shared-types` | Shared DTOs (`NowPlaying`, request/response types) |
-| `apps/api` | Axum backend storing latest playback state in memory |
+| `src/` | Axum backend storing latest playback state in memory |
 | `apps/NowPlaying` | Native macOS menu bar agent (Swift/SwiftUI) |
 
 ## Prerequisites
@@ -30,7 +29,7 @@ Now Playing.app (Swift, polls Apple Music)
 
 ## Setup
 
-1. Clone the repo and enter the workspace:
+1. Clone the repo:
 
 ```bash
 cd now-playing
@@ -42,7 +41,7 @@ cd now-playing
 cp .env.example .env
 ```
 
-3. Build the Rust workspace:
+3. Build the API:
 
 ```bash
 cargo build
@@ -53,7 +52,7 @@ cargo build
 Start the API in one terminal:
 
 ```bash
-cargo run -p api
+cargo run
 ```
 
 ### Menu bar app (recommended)
@@ -136,14 +135,12 @@ The menu bar app stores `api_base_url`, `auth_token`, and `poll_interval_secs` i
 
 ```text
 now-playing/
-├── Cargo.toml              # workspace root (api + shared-types)
+├── Cargo.toml              # Rust API package
+├── src/                    # Axum backend
 ├── apps/
-│   ├── api/                # Axum backend
 │   └── NowPlaying/         # Swift macOS menu bar agent
 ├── scripts/
 │   └── build-mac-agent.sh  # build Now Playing.app
-├── crates/
-│   └── shared-types/       # shared DTOs
 ├── .env.example
 └── README.md
 ```
