@@ -2,6 +2,12 @@
   "$schema": "https://schema.railpack.com",
   "provider": "rust",
   "rootDirectory": "apps/api",
+  "install": {
+    "cmds": [
+      "mkdir -p src",
+      "cargo build --release"
+    ]
+  },
   "deploy": {
     "startCommand": "./target/release/api"
   }
