@@ -22,7 +22,7 @@ enum AgentStatus: Equatable {
 
 @MainActor
 final class SyncEngine {
-    private var previous = PlaybackSnapshot.empty
+    private var previous = SyncAnchor.empty
     private var pollTask: Task<Void, Never>?
     private var config: AgentConfig
     var onStatusChange: ((AgentStatus) -> Void)?
@@ -68,7 +68,7 @@ final class SyncEngine {
     }
 
     private struct PollCycleResult {
-        let snapshot: PlaybackSnapshot
+        let syncAnchor: SyncAnchor
         let payload: UpdateNowPlayingRequest?
         let displayStatus: AgentStatus
         let changed: Bool
@@ -87,12 +87,12 @@ final class SyncEngine {
             do {
                 let music = AppleMusicProvider()
                 let track = try music.currentTrack()
-                let snapshot = PlaybackSnapshot.from(track: track)
-                let changed = snapshot.hasChanged(from: previousSnapshot)
+                let syncAnchor = SyncAnchor.from(track: track)
+                let changed = previousSnapshot.needsResync(track: track)
                 let payload = changed ? try Self.buildUpdateRequest(track: track, music: music) : nil
                 let displayStatus = Self.displayStatus(for: track)
                 return .success(PollCycleResult(
-                    snapshot: snapshot,
+                    syncAnchor: syncAnchor,
                     payload: payload,
                     displayStatus: displayStatus,
                     changed: changed
@@ -112,7 +112,7 @@ final class SyncEngine {
                 )
                 do {
                     try await client.postNowPlaying(payload)
-                    previous = cycle.snapshot
+                    previous = cycle.syncAnchor.anchored(at: Date())
                     LogService.shared.info("Sent now-playing update to API")
                 } catch {
                     LogService.shared.error("Poll cycle failed: \(error.localizedDescription)")

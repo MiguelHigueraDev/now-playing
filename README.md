@@ -80,7 +80,7 @@ Config is stored at `~/Library/Application Support/Now Playing/config.toml`. Log
 
 The app runs as a menu bar agent (no Dock icon). Use **Quit** from the menu to stop it.
 
-The agent polls every 2–5 seconds (default: 3) and only POSTs when the track or play/pause state changes.
+The agent polls every 2–5 seconds (default: 3) and POSTs when the track, play/pause state, or playback position (e.g. seek) changes.
 
 ## API
 
