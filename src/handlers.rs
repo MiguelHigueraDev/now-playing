@@ -9,7 +9,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
 use serde_json::{json, Value};
-use shared_types::{GetNowPlayingResponse, UpdateNowPlayingRequest};
+use crate::models::{GetNowPlayingResponse, UpdateNowPlayingRequest};
 use tracing::info;
 
 use crate::error::ApiError;
