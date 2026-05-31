@@ -1,7 +1,18 @@
 {
   "$schema": "https://schema.railpack.com",
   "provider": "rust",
+  "install": {
+    "cmds": [
+      "cargo build --release"
+    ]
+  },
+  "build": {
+    "cmds": [
+      "mkdir -p bin",
+      "cp target/release/api bin/"
+    ]
+  },
   "deploy": {
-    "startCommand": "./target/release/api"
+    "startCommand": "./bin/api"
   }
 }
