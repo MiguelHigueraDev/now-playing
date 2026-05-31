@@ -5,7 +5,7 @@ Track what you're listening to in Apple Music on macOS and expose it in real tim
 ## Architecture
 
 ```
-mac-agent (polls Apple Music)
+Now Playing.app (Swift, polls Apple Music)
         │
         ▼ POST /api/now-playing
       api (Axum)
@@ -14,17 +14,18 @@ mac-agent (polls Apple Music)
    website / widgets
 ```
 
-| Crate / App | Role |
+| Component | Role |
 |---|---|
 | `crates/shared-types` | Shared DTOs (`NowPlaying`, request/response types) |
-| `crates/music-provider` | `MusicProvider` trait + Apple Music via AppleScript |
 | `apps/api` | Axum backend storing latest playback state in memory |
-| `apps/mac-agent` | macOS menu bar agent that sends updates on change |
+| `apps/NowPlaying` | Native macOS menu bar agent (Swift/SwiftUI) |
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable)
-- macOS with Apple Music installed (for the agent)
+- [Rust](https://rustup.rs/) (stable) for the API
+- [Xcode](https://developer.apple.com/xcode/) 26+ to build the menu bar app (Liquid Glass UI on macOS 26+)
+- macOS 13+ to run the agent; macOS 26+ for Liquid Glass preferences styling
+- Apple Music installed
 - Apple Music must be allowed to respond to AppleScript (System Settings → Privacy & Security → Automation)
 
 ## Setup
@@ -41,7 +42,7 @@ cd now-playing
 cp .env.example .env
 ```
 
-3. Build the workspace:
+3. Build the Rust workspace:
 
 ```bash
 cargo build
@@ -78,14 +79,6 @@ Install and launch:
 Config is stored at `~/Library/Application Support/Now Playing/config.toml`. Logs are written to `~/Library/Application Support/Now Playing/logs/agent.log`.
 
 The app runs as a menu bar agent (no Dock icon). Use **Quit** from the menu to stop it.
-
-### CLI mode (development)
-
-For local debugging without the menu bar shell, run the agent from a terminal with a `.env` file:
-
-```bash
-cargo run -p mac-agent
-```
 
 The agent polls every 2–5 seconds (default: 3) and only POSTs when the track or play/pause state changes.
 
@@ -132,28 +125,25 @@ curl -X POST http://localhost:3000/api/now-playing \
 
 | Variable | Used by | Default | Description |
 |---|---|---|---|
-| `NOW_PLAYING_TOKEN` | api, mac-agent | — | Bearer token for POST auth |
+| `NOW_PLAYING_TOKEN` | api | — | Bearer token for POST auth |
 | `API_HOST` | api | `0.0.0.0` | Bind host |
 | `API_PORT` | api | `3000` | Bind port |
-| `API_BASE_URL` | mac-agent | `http://localhost:3000` | API base URL |
-| `POLL_INTERVAL_SECS` | mac-agent (CLI) | `3` | Poll interval (2–5 seconds) |
-| `RUST_LOG` | both | `info` | Tracing filter |
+| `RUST_LOG` | api | `info` | Tracing filter |
 
-The packaged menu bar app stores `api_base_url`, `auth_token`, and `poll_interval_secs` in `~/Library/Application Support/Now Playing/config.toml` instead of using environment variables.
+The menu bar app stores `api_base_url`, `auth_token`, and `poll_interval_secs` in `~/Library/Application Support/Now Playing/config.toml`.
 
 ## Project layout
 
 ```
 now-playing/
-├── Cargo.toml              # workspace root
+├── Cargo.toml              # workspace root (api + shared-types)
 ├── apps/
 │   ├── api/                # Axum backend
-│   └── mac-agent/          # macOS menu bar music tracker
+│   └── NowPlaying/         # Swift macOS menu bar agent
 ├── scripts/
 │   └── build-mac-agent.sh  # build Now Playing.app
 ├── crates/
-│   ├── shared-types/       # shared DTOs
-│   └── music-provider/     # Apple Music integration
+│   └── shared-types/       # shared DTOs
 ├── .env.example
 └── README.md
 ```
@@ -161,10 +151,10 @@ now-playing/
 ## Next steps
 
 - ~~Add an /api/image endpoint to render an image with the data from /api/now-playing~~ (`GET /api/now-playing/image`)
-- ~~Package `mac-agent` as a menu bar daemon~~ (menu bar app with Preferences and Login Item)
+- ~~Package menu bar daemon~~ (native Swift app with Preferences and Login Item)
 - Persist state with SQLx + SQLite
 - Add Redis for pub/sub and caching
-- Add Spotify and other providers via `MusicProvider`
+- Add Spotify and other music providers
 
 ## License
 

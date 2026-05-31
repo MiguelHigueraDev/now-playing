@@ -14,7 +14,7 @@ pub struct NowPlaying {
     pub listened_at: DateTime<Utc>,
 }
 
-/// Payload sent by the mac-agent when playback state changes.
+/// Payload sent by the menu bar agent when playback state changes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateNowPlayingRequest {
     pub track_name: String,

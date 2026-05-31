@@ -1,9 +1,7 @@
 [workspace]
 members = [
     "apps/api",
-    "apps/mac-agent",
     "crates/shared-types",
-    "crates/music-provider",
 ]
 resolver = "2"
 
@@ -14,7 +12,6 @@ license = "MIT"
 
 [workspace.dependencies]
 shared-types = { path = "crates/shared-types" }
-music-provider = { path = "crates/music-provider" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
