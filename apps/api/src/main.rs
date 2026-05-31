@@ -30,6 +30,7 @@ async fn main() {
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port: u16 = std::env::var("API_PORT")
+        .or_else(|_| std::env::var("PORT"))
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(3000);
