@@ -31,6 +31,8 @@ const IDLE_MESSAGE_FONT: u32 = 14;
 const TRACK_TO_ARTIST: u32 = 24;
 const ARTIST_TO_ALBUM: u32 = 18;
 const IDLE_MESSAGE: &str = "Not listening to anything";
+const BAR_TRACK_FILL: &str = "#ffffff";
+const BAR_TRACK_FILL_OPACITY: &str = "0.08";
 
 fn art_y() -> u32 {
     (PADDING + CONTENT_BOTTOM).saturating_sub(ART_SIZE) / 2
@@ -84,7 +86,6 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
     let thumb_x = PADDING + fill_width;
     let duration_label_x = WIDTH - PADDING;
     let (track_y, artist_y, album_y) = metadata_baselines();
-    let bar_center_y = BAR_Y + BAR_H / 2;
     let time_label_y = BAR_Y + BAR_H + TIME_LABEL_OFFSET;
     let art_y = art_y();
 
@@ -99,10 +100,18 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
     let artwork_bytes = input.artwork.map(|art| art.bytes.as_slice());
     let (bg_gradient_defs, bg_markup, accent_color) =
         svg_theme_from_artwork(artwork_bytes, WIDTH, HEIGHT);
+    let (progress_styles, progress_bar) = progress_bar_markup(
+        &accent_color,
+        fill_width,
+        thumb_x,
+        input.now_playing.is_playing,
+        duration,
+        position,
+    );
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="Now playing: {track}">
   <defs>
-{bg_gradient_defs}    <linearGradient id="art-shine" x1="0" y1="0" x2="0" y2="1">
+{bg_gradient_defs}{progress_styles}    <linearGradient id="art-shine" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>
       <stop offset="40%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
@@ -127,16 +136,65 @@ pub fn render_now_playing_svg(input: SvgRenderInput<'_>) -> String {
     <text x="{TEXT_X}" y="{track_y}" fill="#faf8f5" font-family="{FONT_SANS}" font-size="{TRACK_FONT}" font-weight="700" letter-spacing="-0.02em">{track}</text>
     <text x="{TEXT_X}" y="{artist_y}" fill="#d8d4cc" font-family="{FONT_SANS}" font-size="{ARTIST_FONT}" font-weight="500">{artist}</text>
     <text x="{TEXT_X}" y="{album_y}" fill="#8f8a82" font-family="{FONT_SANS}" font-size="{ALBUM_FONT}" font-weight="400">{album}</text>
-    <rect x="{PADDING}" y="{BAR_Y}" width="{BAR_WIDTH}" height="{BAR_H}" rx="2" fill="#ffffff" fill-opacity="0.08"/>
-    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="2" fill="{accent_color}"/>
-    <circle cx="{thumb_x}" cy="{bar_center_y}" r="4" fill="{accent_color}" opacity="{thumb_opacity}"/>
+{progress_bar}
     <text x="{PADDING}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="10" font-variant-numeric="tabular-nums" letter-spacing="0.04em">{position_label}</text>
     <text x="{duration_label_x}" y="{time_label_y}" fill="#a39e94" font-family="{FONT_SANS}" font-size="10" font-variant-numeric="tabular-nums" letter-spacing="0.04em" text-anchor="end">{duration_label}</text>
   </g>
   <rect width="{WIDTH}" height="{HEIGHT}" rx="{CARD_RX}" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
 </svg>"##,
-        thumb_opacity = if fill_width > 4 { "1" } else { "0" },
     )
+}
+
+fn progress_bar_markup(
+    accent_color: &str,
+    fill_width: u32,
+    thumb_x: u32,
+    is_playing: bool,
+    duration: u32,
+    position: u32,
+) -> (String, String) {
+    let bar_center_y = BAR_Y + BAR_H / 2;
+    let end_thumb_x = PADDING + BAR_WIDTH;
+    let thumb_opacity = if fill_width > 4 { "1" } else { "0" };
+    let track = format!(
+        r#"    <rect x="{PADDING}" y="{BAR_Y}" width="{BAR_WIDTH}" height="{BAR_H}" rx="2" fill="{BAR_TRACK_FILL}" fill-opacity="{BAR_TRACK_FILL_OPACITY}"/>"#
+    );
+
+    let (defs_styles, fill_and_thumb) = if is_playing && duration > 0 && position < duration {
+        let remaining = duration - position;
+        let styles = format!(
+            r#"    <style>
+      @keyframes np-seek-fill {{
+        from {{ width: {fill_width}px; }}
+        to {{ width: {BAR_WIDTH}px; }}
+      }}
+      @keyframes np-seek-thumb {{
+        from {{ transform: translate({thumb_x}px, {bar_center_y}px); }}
+        to {{ transform: translate({end_thumb_x}px, {bar_center_y}px); }}
+      }}
+      @keyframes np-thumb-pulse {{
+        0%, 100% {{ transform: scale(1); }}
+        50% {{ transform: scale(1.35); }}
+      }}
+    </style>
+"#
+        );
+        let markup = format!(
+            r#"    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="2" fill="{accent_color}" style="animation: np-seek-fill {remaining}s linear forwards"/>
+    <g style="transform: translate({thumb_x}px, {bar_center_y}px); animation: np-seek-thumb {remaining}s linear forwards">
+      <circle cx="0" cy="0" r="4" fill="{accent_color}" opacity="{thumb_opacity}" style="transform-box: fill-box; transform-origin: center; animation: np-thumb-pulse 1.6s ease-in-out infinite"/>
+    </g>"#
+        );
+        (styles, markup)
+    } else {
+        let markup = format!(
+            r#"    <rect x="{PADDING}" y="{BAR_Y}" width="{fill_width}" height="{BAR_H}" rx="2" fill="{accent_color}"/>
+    <circle cx="{thumb_x}" cy="{bar_center_y}" r="4" fill="{accent_color}" opacity="{thumb_opacity}"/>"#
+        );
+        (String::new(), markup)
+    };
+
+    (defs_styles, format!("{track}\n{fill_and_thumb}"))
 }
 
 fn render_idle_svg() -> String {
@@ -258,6 +316,34 @@ mod tests {
         assert!(!svg.contains("thumb-glow"));
         assert!(svg.contains(r#"height="128""#));
         assert!(PADDING + ART_SIZE + BAR_GAP_ABOVE <= BAR_Y);
+        assert!(svg.contains("@keyframes np-seek-fill"));
+        assert!(svg.contains("animation: np-seek-fill 160s linear forwards"));
+        assert!(!svg.contains("<animate"));
+    }
+
+    #[test]
+    fn paused_progress_bar_is_static() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let at = listened_at + chrono::Duration::seconds(30);
+        let now_playing = NowPlaying {
+            track_name: "Test Song".into(),
+            artist_name: "Test Artist".into(),
+            album_name: "Test Album".into(),
+            artwork_url: None,
+            duration_seconds: Some(200),
+            position_seconds: Some(10),
+            is_playing: false,
+            listened_at,
+        };
+
+        let svg = render_now_playing_svg(SvgRenderInput {
+            now_playing: &now_playing,
+            artwork: None,
+            at,
+        });
+
+        assert!(!svg.contains("@keyframes np-seek-fill"));
+        assert!(!svg.contains("<animate"));
     }
 
     #[test]
