@@ -45,7 +45,7 @@ struct NowPlayingApp: App {
             PreferencesView()
                 .environmentObject(appState)
         }
-        .defaultSize(width: 460, height: 360)
+        .defaultSize(width: 520, height: 440)
     }
 }
 

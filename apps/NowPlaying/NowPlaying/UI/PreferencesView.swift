@@ -5,6 +5,7 @@ struct PreferencesView: View {
 
     @State private var apiBaseURL: String = ""
     @State private var authToken: String = ""
+    @State private var isAuthTokenVisible = false
     @State private var pollIntervalSecs: Int = 3
     @State private var validationError: String?
     @State private var savedMessage: String?
@@ -20,31 +21,49 @@ struct PreferencesView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    Form {
-                        LabeledContent("API Base URL") {
-                            TextField("http://localhost:3000", text: $apiBaseURL)
+                    VStack(alignment: .leading, spacing: 20) {
+                        preferenceField(label: "API Base URL") {
+                            TextField("", text: $apiBaseURL)
                                 .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: .infinity)
+
+                            Text("Must be a valid HTTPS URL")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
-                        LabeledContent("Auth Token") {
-                            SecureField("Bearer token", text: $authToken)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        LabeledContent("Poll Interval (seconds)") {
-                            HStack {
-                                Stepper(value: $pollIntervalSecs, in: 2 ... 5) {
-                                    Text("\(pollIntervalSecs)")
-                                        .monospacedDigit()
-                                        .frame(width: 24, alignment: .trailing)
+                        preferenceField(label: "Auth Token") {
+                            HStack(spacing: 8) {
+                                Group {
+                                    if isAuthTokenVisible {
+                                        TextField("", text: $authToken)
+                                    } else {
+                                        SecureField("", text: $authToken)
+                                    }
                                 }
-                                Text("Must be between 2 and 5")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                .textFieldStyle(.roundedBorder)
+
+                                Button {
+                                    isAuthTokenVisible.toggle()
+                                } label: {
+                                    Image(systemName: isAuthTokenVisible ? "eye.slash" : "eye")
+                                }
+                                .buttonStyle(.borderless)
+                                .help(isAuthTokenVisible ? "Hide token" : "Show token")
                             }
                         }
+
+                        preferenceField(label: "Poll Interval") {
+                            Picker("", selection: $pollIntervalSecs) {
+                                ForEach(2 ... 5, id: \.self) { secs in
+                                    Text("\(secs)s").tag(secs)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity)
+                        }
                     }
-                    .formStyle(.grouped)
 
                     if let configLoadError = appState.configLoadError {
                         Text("Config load failed: \(configLoadError). Fix settings below and save.")
@@ -66,11 +85,6 @@ struct PreferencesView: View {
 
                     HStack {
                         Spacer()
-                        Button("Cancel") {
-                            loadFromConfig()
-                            validationError = nil
-                            savedMessage = nil
-                        }
                         Button("Save") {
                             save()
                         }
@@ -81,9 +95,22 @@ struct PreferencesView: View {
             }
             .padding(24)
         }
-        .frame(minWidth: 460, minHeight: 320)
+        .frame(minWidth: 520, minHeight: 440)
         .onAppear {
             loadFromConfig()
+        }
+    }
+
+    @ViewBuilder
+    private func preferenceField<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+
+            content()
         }
     }
 
@@ -91,6 +118,7 @@ struct PreferencesView: View {
         apiBaseURL = appState.config.apiBaseURL
         authToken = appState.config.authToken
         pollIntervalSecs = Int(appState.config.pollIntervalSecs)
+        isAuthTokenVisible = false
     }
 
     private func save() {
