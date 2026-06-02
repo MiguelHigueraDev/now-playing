@@ -9,7 +9,10 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
 use serde_json::{json, Value};
-use crate::models::{GetNowPlayingResponse, UpdateNowPlayingRequest};
+use crate::models::{
+    cleared_now_playing, has_reached_end, GetNowPlayingResponse, NowPlaying,
+    UpdateNowPlayingRequest,
+};
 use tracing::info;
 
 use crate::error::ApiError;
@@ -25,33 +28,23 @@ pub async fn health() -> Json<Value> {
 pub async fn get_now_playing(
     State(state): State<AppState>,
 ) -> Result<Json<GetNowPlayingResponse>, ApiError> {
-    let guard = state
-        .now_playing
-        .read()
-        .map_err(|_| ApiError::Internal)?;
+    let current = load_now_playing(&state)?;
 
-    let Some(current) = guard.as_ref() else {
-        return Err(ApiError::NotFound);
-    };
-
-    Ok(Json(current.clone().into()))
+    Ok(Json(current.into()))
 }
 
 pub async fn get_now_playing_image(State(state): State<AppState>) -> Result<Response, ApiError> {
-    let now_guard = state
-        .now_playing
-        .read()
-        .map_err(|_| ApiError::Internal)?;
-
-    let Some(current) = now_guard.as_ref() else {
-        return Err(ApiError::NotFound);
-    };
+    let current = load_now_playing(&state)?;
 
     let art_guard = state.artwork.read().map_err(|_| ApiError::Internal)?;
-    let artwork = (*art_guard).as_ref();
+    let artwork = if current.track_name.is_empty() {
+        None
+    } else {
+        (*art_guard).as_ref()
+    };
 
     let svg = render_now_playing_svg(SvgRenderInput {
-        now_playing: current,
+        now_playing: &current,
         artwork,
         at: Utc::now(),
     });
@@ -107,6 +100,30 @@ pub async fn update_now_playing(
     *guard = Some(now_playing);
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn load_now_playing(state: &AppState) -> Result<NowPlaying, ApiError> {
+    let at = Utc::now();
+    let mut guard = state
+        .now_playing
+        .write()
+        .map_err(|_| ApiError::Internal)?;
+
+    let Some(current) = guard.as_ref() else {
+        return Err(ApiError::NotFound);
+    };
+
+    if has_reached_end(current, at) {
+        *guard = Some(cleared_now_playing());
+        drop(guard);
+
+        let mut artwork_guard = state.artwork.write().map_err(|_| ApiError::Internal)?;
+        *artwork_guard = None;
+
+        return Ok(cleared_now_playing());
+    }
+
+    Ok(current.clone())
 }
 
 fn store_artwork(

@@ -57,6 +57,37 @@ pub struct GetNowPlayingResponse {
     pub listened_at: DateTime<Utc>,
 }
 
+/// Empty playback state (nothing playing).
+pub fn cleared_now_playing() -> NowPlaying {
+    NowPlaying {
+        track_name: String::new(),
+        artist_name: String::new(),
+        album_name: String::new(),
+        artwork_url: None,
+        duration_seconds: None,
+        position_seconds: None,
+        is_playing: false,
+        listened_at: Utc::now(),
+    }
+}
+
+/// Whether playback has reached the end of the track at `at`.
+pub fn has_reached_end(now: &NowPlaying, at: DateTime<Utc>) -> bool {
+    if now.track_name.is_empty() {
+        return false;
+    }
+
+    let Some(duration) = now.duration_seconds else {
+        return false;
+    };
+
+    if duration == 0 {
+        return false;
+    }
+
+    extrapolated_position_seconds(now, at) >= duration
+}
+
 /// Playback position at `at`, extrapolating from `listened_at` while the track is playing.
 pub fn extrapolated_position_seconds(now: &NowPlaying, at: DateTime<Utc>) -> u32 {
     let base = now.position_seconds.unwrap_or(0);
@@ -145,6 +176,54 @@ mod tests {
 
         let at = listened_at + chrono::Duration::seconds(30);
         assert_eq!(extrapolated_position_seconds(&now_playing, at), 100);
+    }
+
+    #[test]
+    fn detects_reached_end_while_playing() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let now_playing = NowPlaying {
+            track_name: "Song".into(),
+            artist_name: "Artist".into(),
+            album_name: "Album".into(),
+            artwork_url: None,
+            duration_seconds: Some(100),
+            position_seconds: Some(90),
+            is_playing: true,
+            listened_at,
+        };
+
+        let before_end = listened_at + chrono::Duration::seconds(5);
+        assert!(!has_reached_end(&now_playing, before_end));
+
+        let at_end = listened_at + chrono::Duration::seconds(10);
+        assert!(has_reached_end(&now_playing, at_end));
+    }
+
+    #[test]
+    fn detects_reached_end_when_paused_at_duration() {
+        let listened_at = Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap();
+        let now_playing = NowPlaying {
+            track_name: "Song".into(),
+            artist_name: "Artist".into(),
+            album_name: "Album".into(),
+            artwork_url: None,
+            duration_seconds: Some(100),
+            position_seconds: Some(100),
+            is_playing: false,
+            listened_at,
+        };
+
+        assert!(has_reached_end(
+            &now_playing,
+            listened_at + chrono::Duration::seconds(60)
+        ));
+    }
+
+    #[test]
+    fn empty_track_has_not_reached_end() {
+        let listened_at = Utc::now();
+        let now_playing = cleared_now_playing();
+        assert!(!has_reached_end(&now_playing, listened_at));
     }
 }
 

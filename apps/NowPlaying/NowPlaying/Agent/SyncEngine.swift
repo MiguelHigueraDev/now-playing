@@ -72,6 +72,8 @@ final class SyncEngine {
         let payload: UpdateNowPlayingRequest?
         let displayStatus: AgentStatus
         let changed: Bool
+        let resyncNeeded: Bool
+        let reachedEnd: Bool
     }
 
     private func pollOnce() async {
@@ -88,14 +90,27 @@ final class SyncEngine {
                 let music = AppleMusicProvider()
                 let track = try music.currentTrack()
                 let syncAnchor = SyncAnchor.from(track: track)
-                let changed = previousSnapshot.needsResync(track: track)
-                let payload = changed ? try Self.buildUpdateRequest(track: track, music: music) : nil
+                let resyncNeeded = previousSnapshot.needsResync(track: track)
+                let reachedEnd = previousSnapshot.hasReachedEnd()
+                let changed = resyncNeeded || reachedEnd
+                let payload: UpdateNowPlayingRequest?
+                if changed {
+                    if reachedEnd && !resyncNeeded {
+                        payload = .cleared()
+                    } else {
+                        payload = try Self.buildUpdateRequest(track: track, music: music)
+                    }
+                } else {
+                    payload = nil
+                }
                 let displayStatus = Self.displayStatus(for: track)
                 return .success(PollCycleResult(
                     syncAnchor: syncAnchor,
                     payload: payload,
                     displayStatus: displayStatus,
-                    changed: changed
+                    changed: changed,
+                    resyncNeeded: resyncNeeded,
+                    reachedEnd: reachedEnd
                 ))
             } catch {
                 return .failure(error)
@@ -112,7 +127,9 @@ final class SyncEngine {
                 )
                 do {
                     try await client.postNowPlaying(payload)
-                    previous = cycle.syncAnchor.anchored(at: Date())
+                    previous = cycle.reachedEnd && !cycle.resyncNeeded
+                        ? .empty
+                        : cycle.syncAnchor.anchored(at: Date())
                     LogService.shared.info("Sent now-playing update to API")
                 } catch {
                     LogService.shared.error("Poll cycle failed: \(error.localizedDescription)")

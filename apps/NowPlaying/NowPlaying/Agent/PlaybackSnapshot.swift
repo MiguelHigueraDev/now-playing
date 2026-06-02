@@ -28,12 +28,14 @@ struct PlaybackSnapshot: Equatable {
 struct SyncAnchor: Equatable {
     var snapshot: PlaybackSnapshot
     var positionSeconds: UInt32?
+    var durationSeconds: UInt32?
     var isPlaying: Bool
     var syncedAt: Date
 
     static let empty = SyncAnchor(
         snapshot: .empty,
         positionSeconds: nil,
+        durationSeconds: nil,
         isPlaying: false,
         syncedAt: .distantPast
     )
@@ -46,6 +48,7 @@ struct SyncAnchor: Equatable {
         return SyncAnchor(
             snapshot: PlaybackSnapshot.from(track: track),
             positionSeconds: track.positionSeconds,
+            durationSeconds: track.durationSeconds,
             isPlaying: track.isPlaying,
             syncedAt: syncedAt
         )
@@ -55,9 +58,28 @@ struct SyncAnchor: Equatable {
         SyncAnchor(
             snapshot: snapshot,
             positionSeconds: positionSeconds,
+            durationSeconds: durationSeconds,
             isPlaying: isPlaying,
             syncedAt: date
         )
+    }
+
+    func extrapolatedPosition(now: Date = Date()) -> UInt32 {
+        let base = positionSeconds ?? 0
+        guard isPlaying else { return base }
+
+        let elapsed = UInt32(max(0, now.timeIntervalSince(syncedAt).rounded()))
+        var current = base &+ elapsed
+        if let duration = durationSeconds {
+            current = min(current, duration)
+        }
+        return current
+    }
+
+    func hasReachedEnd(now: Date = Date()) -> Bool {
+        guard !snapshot.trackName.isEmpty else { return false }
+        guard let duration = durationSeconds, duration > 0 else { return false }
+        return extrapolatedPosition(now: now) >= duration
     }
 
     func needsResync(track: NowPlayingTrack?, now: Date = Date()) -> Bool {
